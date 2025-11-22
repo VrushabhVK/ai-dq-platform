@@ -1,10 +1,13 @@
-streamlit
 pandas
 numpy
 scikit-learn
+streamlit
 rapidfuzz
+matplotlib
 openpyxl
+psycopg2-binary
 SQLAlchemy
-apscheduler
 python-dotenv
 openai
+apscheduler
+pytest
