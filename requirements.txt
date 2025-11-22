@@ -1,0 +1,6 @@
+streamlit
+pandas
+scikit-learn
+openai
+apscheduler
+psycopg2-binary
