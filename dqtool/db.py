@@ -1,22 +1,25 @@
 # dqtool/db.py
 import os
 import json
-from sqlalchemy import (
-    create_engine, MetaData, Table,
-    Column, Integer, String, JSON, DateTime
-)
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, JSON, DateTime
 from sqlalchemy.sql import func
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:////mount/data/dq_meta.db"
-)
+# Optional DB: use SQLite by default, but switch to in-memory fallback if DB fails
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///dq_meta.db")
 
-engine = create_engine(DATABASE_URL)
+DB_AVAILABLE = True
+engine = None
 metadata = MetaData()
 
+try:
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+except Exception:
+    DB_AVAILABLE = False
+
+
 # ---------------------------
-# Tables
+# Define tables
 # ---------------------------
 
 scans = Table(
@@ -47,11 +50,19 @@ reports_table = Table(
 
 
 # ---------------------------
-# Init DB
+# Init DB safely
 # ---------------------------
 
 def init_db():
-    metadata.create_all(engine)
+    global DB_AVAILABLE
+    if not engine:
+        DB_AVAILABLE = False
+        return
+
+    try:
+        metadata.create_all(engine)
+    except Exception:
+        DB_AVAILABLE = False
 
 
 # ---------------------------
@@ -59,15 +70,21 @@ def init_db():
 # ---------------------------
 
 def save_scan(job_name, row_count, dq_score, report):
-    with engine.connect() as conn:
-        conn.execute(
-            scans.insert().values(
-                job_name=job_name,
-                row_count=row_count,
-                dq_score=dq_score,
-                report=report,
+    if not DB_AVAILABLE:
+        return  # fail silently on Streamlit Cloud
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                scans.insert().values(
+                    job_name=job_name,
+                    row_count=row_count,
+                    dq_score=dq_score,
+                    report=report,
+                )
             )
-        )
+    except Exception:
+        pass  # fallback silently
 
 
 # ---------------------------
@@ -75,19 +92,30 @@ def save_scan(job_name, row_count, dq_score, report):
 # ---------------------------
 
 def save_rules(rules):
-    with engine.connect() as conn:
-        conn.execute(
-            rules_table.insert().values(
-                rules_json=rules
+    if not DB_AVAILABLE:
+        return
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                rules_table.insert().values(rules_json=rules)
             )
-        )
+    except Exception:
+        pass
 
 
 def load_rules():
-    with engine.connect() as conn:
-        result = conn.execute(rules_table.select().order_by(rules_table.c.id.desc()))
-        row = result.fetchone()
-        return row["rules_json"] if row else []
+    if not DB_AVAILABLE:
+        return []  # fallback
+
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                rules_table.select().order_by(rules_table.c.id.desc())
+            ).fetchone()
+            return row["rules_json"] if row else []
+    except Exception:
+        return []
 
 
 # ---------------------------
@@ -95,12 +123,18 @@ def load_rules():
 # ---------------------------
 
 def save_report_meta(title, dq_score, row_count):
-    with engine.connect() as conn:
-        res = conn.execute(
-            reports_table.insert().values(
-                title=title,
-                dq_score=dq_score,
-                row_count=row_count,
+    if not DB_AVAILABLE:
+        return 0  # fake ID
+
+    try:
+        with engine.connect() as conn:
+            res = conn.execute(
+                reports_table.insert().values(
+                    title=title,
+                    dq_score=dq_score,
+                    row_count=row_count,
+                )
             )
-        )
-        return res.inserted_primary_key[0]
+            return res.inserted_primary_key[0]
+    except Exception:
+        return 0
