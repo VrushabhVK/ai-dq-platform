@@ -7,7 +7,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.sql import func
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///dq_meta.db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:////mount/data/dq_meta.db"
+)
 
 engine = create_engine(DATABASE_URL)
 metadata = MetaData()
