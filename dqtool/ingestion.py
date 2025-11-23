@@ -1,27 +1,8 @@
 # dqtool/ingestion.py
-"""
-Data ingestion helpers for Snowflake / PostgreSQL / MySQL.
-
-All functions return a pandas DataFrame.
-"""
-
 import pandas as pd
-import sqlalchemy as sa
-
-
-def _make_sqlalchemy_engine(db_type: str, host: str, port: str, user: str, password: str, database: str):
-    db_type = db_type.lower()
-    if db_type == "postgresql":
-        url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
-    elif db_type == "mysql":
-        url = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
-    elif db_type == "snowflake":
-        # host is actually "account" for Snowflake
-        # requires: pip install snowflake-sqlalchemy snowflake-connector-python
-        url = f"snowflake://{user}:{password}@{host}/{database}"
-    else:
-        raise ValueError(f"Unsupported db_type: {db_type}")
-    return sa.create_engine(url)
+import sqlalchemy
+import snowflake.connector
+import pymysql
 
 
 def load_from_source(
@@ -34,18 +15,44 @@ def load_from_source(
     table_or_query: str,
 ) -> pd.DataFrame:
     """
-    db_type: 'PostgreSQL' | 'MySQL' | 'Snowflake'
-    table_or_query: either a plain table name or a full SQL query
+    Load data from Snowflake, PostgreSQL, or MySQL.
     """
-    engine = _make_sqlalchemy_engine(db_type, host, port, user, password, database)
 
-    with engine.connect() as conn:
-        text = table_or_query.strip()
-        if " " in text.lower():
-            # treat as SQL
-            df = pd.read_sql(text, conn)
-        else:
-            # treat as table name
-            df = pd.read_sql(f"SELECT * FROM {text}", conn)
+    db_type = db_type.lower()
 
-    return df
+    # -----------------------------
+    # PostgreSQL
+    # -----------------------------
+    if db_type == "postgresql":
+        engine = sqlalchemy.create_engine(
+            f"postgresql://{user}:{password}@{host}:{port}/{database}"
+        )
+        return pd.read_sql(table_or_query, engine)
+
+    # -----------------------------
+    # MySQL
+    # -----------------------------
+    if db_type == "mysql":
+        engine = sqlalchemy.create_engine(
+            f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+        )
+        return pd.read_sql(table_or_query, engine)
+
+    # -----------------------------
+    # Snowflake
+    # -----------------------------
+    if db_type == "snowflake":
+        conn = snowflake.connector.connect(
+            user=user,
+            password=password,
+            account=host,
+            warehouse="COMPUTE_WH",
+            database=database,
+            schema="PUBLIC",
+        )
+
+        df = pd.read_sql(table_or_query, conn)
+        conn.close()
+        return df
+
+    raise ValueError("Unsupported database type. Use PostgreSQL, MySQL, or Snowflake.")

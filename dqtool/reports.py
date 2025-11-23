@@ -1,69 +1,55 @@
 # dqtool/reports.py
-"""
-Generate simple PDF validation reports.
-
-Requires: reportlab
-    pip install reportlab
-"""
-
-from io import BytesIO
-from datetime import datetime
-
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+from io import BytesIO
+import datetime
 
 
 def generate_pdf_report_bytes(df, profile_df, dq_score, rules):
+    """
+    Generate a complete PDF report as bytes.
+    """
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    doc = SimpleDocTemplate(buffer)
+
     styles = getSampleStyleSheet()
     story = []
 
     # Title
-    story.append(Paragraph("Data Quality Report", styles["Title"]))
-    story.append(Spacer(1, 12))
-    story.append(Paragraph(f"Generated at: {datetime.utcnow().isoformat()} UTC", styles["Normal"]))
-    story.append(Spacer(1, 12))
+    title = Paragraph("AI Data Quality Report", styles["Title"])
+    story.append(title)
+    story.append(Spacer(1, 20))
 
-    # Summary
-    story.append(Paragraph(f"Rows: {len(df)}", styles["Normal"]))
-    story.append(Paragraph(f"Columns: {len(df.columns)}", styles["Normal"]))
-    story.append(Paragraph(f"Data Quality Score: {dq_score} / 100", styles["Normal"]))
-    story.append(Spacer(1, 12))
+    # Timestamp
+    ts = Paragraph(f"Generated on: {datetime.datetime.now()}", styles["Normal"])
+    story.append(ts)
+    story.append(Spacer(1, 20))
 
-    # Profile table (top 15 columns)
-    story.append(Paragraph("Column Profiling (truncated)", styles["Heading2"]))
-    story.append(Spacer(1, 6))
-    pdf_profile = profile_df.head(15).fillna("").astype(str)
-    data = [list(pdf_profile.columns)] + pdf_profile.values.tolist()
-    table = Table(data, repeatRows=1)
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ]
-        )
+    # Score
+    score = Paragraph(f"<b>Data Quality Score:</b> {dq_score} / 100", styles["Heading2"])
+    story.append(score)
+    story.append(Spacer(1, 20))
+
+    # Profiling Table
+    story.append(Paragraph("Profiling Summary", styles["Heading2"]))
+    profile_table = Table([profile_df.columns.tolist()] + profile_df.values.tolist())
+
+    profile_table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.gray),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ])
     )
-    story.append(table)
-    story.append(Spacer(1, 12))
+    story.append(profile_table)
+    story.append(Spacer(1, 20))
 
     # Rules
-    story.append(Paragraph("Active Rules", styles["Heading2"]))
-    if not rules:
-        story.append(Paragraph("No rules configured.", styles["Normal"]))
-    else:
-        for r in rules:
-            text = f"Column: <b>{r.get('column')}</b> — Rule: {r.get('rule')} (conf: {r.get('confidence', 'N/A')})"
-            story.append(Paragraph(text, styles["Normal"]))
-            story.append(Spacer(1, 4))
+    story.append(Paragraph("Applied / Suggested Rules", styles["Heading2"]))
+    for r in rules:
+        story.append(Paragraph(f"• <b>{r.get('column')}:</b> {r.get('rule')}", styles["Normal"]))
 
     doc.build(story)
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    return pdf_bytes
+    return buffer.getvalue()
