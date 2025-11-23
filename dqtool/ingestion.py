@@ -1,8 +1,6 @@
 # dqtool/ingestion.py
 import pandas as pd
 import sqlalchemy
-import snowflake.connector
-import pymysql
 
 
 def load_from_source(
@@ -14,9 +12,6 @@ def load_from_source(
     database: str,
     table_or_query: str,
 ) -> pd.DataFrame:
-    """
-    Load data from Snowflake, PostgreSQL, or MySQL.
-    """
 
     db_type = db_type.lower()
 
@@ -33,15 +28,27 @@ def load_from_source(
     # MySQL
     # -----------------------------
     if db_type == "mysql":
+        try:
+            import pymysql
+        except ImportError:
+            raise Exception("MySQL connector (pymysql) is not installed.")
+
         engine = sqlalchemy.create_engine(
             f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
         )
         return pd.read_sql(table_or_query, engine)
 
     # -----------------------------
-    # Snowflake
+    # Snowflake (lazy import)
     # -----------------------------
     if db_type == "snowflake":
+        try:
+            import snowflake.connector
+        except ImportError:
+            raise Exception(
+                "Snowflake connector is not installed on this environment."
+            )
+
         conn = snowflake.connector.connect(
             user=user,
             password=password,
@@ -50,9 +57,8 @@ def load_from_source(
             database=database,
             schema="PUBLIC",
         )
-
         df = pd.read_sql(table_or_query, conn)
         conn.close()
         return df
 
-    raise ValueError("Unsupported database type. Use PostgreSQL, MySQL, or Snowflake.")
+    raise ValueError("Unsupported database type.")
